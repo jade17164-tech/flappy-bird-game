@@ -199,11 +199,43 @@ const pipeWidth = 58;
 let pipeTimer = 0;
 let pipeSpeed = 2.2;
 
-// 점수가 오를수록 간격은 좁아지고, 빨라지고, 파이프가 위아래로 움직인다
-const GAP_START = 150, GAP_MIN = 110;
+// 점수가 오를수록 기준 간격은 좁아지고, 빨라지고, 파이프가 위아래로 움직인다
+// 기준 간격은 변화 폭을 확보할 만큼만 좁아지고, 실제 난이도는 파이프별 변형이 만든다
+const GAP_START = 150, GAP_MIN = 128;
 const SPEED_START = 2.2, SPEED_MAX = 3.3;
 const SPACING = 205;      // 파이프 사이 픽셀 간격(속도와 무관하게 유지)
 const WAVE_FROM = 10;     // 이 점수부터 파이프가 흔들리기 시작
+
+// 파이프마다 간격을 다르게 뽑아 난이도에 기복을 준다
+const GAP_HARD_MIN = 104, GAP_HARD_MAX = 200;
+const GAP_VARIANTS = [
+  { mul: 1.28, weight: 3 },  // 널널 — 한숨 돌리는 구간
+  { mul: 1.06, weight: 5 },
+  { mul: 0.88, weight: 4 },  // 빡빡
+  { mul: 0.82, weight: 2 }   // 아주 빡빡
+];
+let lastGapMul = 1;
+
+function pickGapMul() {
+  // 초반 몇 개는 넓은 구간만 내보내 적응할 여유를 준다
+  if (score < 3) return (lastGapMul = GAP_VARIANTS[Math.random() < 0.5 ? 0 : 1].mul);
+
+  const t = Math.min(score, 30) / 30;
+  const tightBefore = lastGapMul < 0.9;
+  const weights = GAP_VARIANTS.map(v => {
+    // 점수가 오를수록 좁은 구간이 자주 나온다
+    let w = v.weight * (v.mul >= 1 ? 1.6 - 0.8 * t : 0.35 + 1.15 * t);
+    // 좁은 구간이 연달아 나오면 불합리하므로, 직후에는 넓은 쪽에 가중치를 준다
+    if (tightBefore) w *= v.mul >= 1 ? 3 : 0.35;
+    return w;
+  });
+  let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < GAP_VARIANTS.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return (lastGapMul = GAP_VARIANTS[i].mul);
+  }
+  return (lastGapMul = 1);
+}
 
 function difficulty() {
   const t = Math.min(score, 30) / 30;
@@ -252,6 +284,7 @@ function resetGame() {
   bird.rotation = 0;
   pipes.length = 0;
   pipeTimer = 0;
+  lastGapMul = 1;
   particles.length = 0;
   score = 0;
   flashAlpha = 0;
@@ -397,14 +430,18 @@ function update() {
   pipeTimer++;
   if (pipeTimer >= Math.round(SPACING / d.speed)) {
     pipeTimer = 0;
-    const minTop = 55 + d.wave;
-    const maxTop = H - groundHeight - d.gap - 55 - d.wave;
+    const mul = pickGapMul();
+    const gap = Math.max(GAP_HARD_MIN, Math.min(GAP_HARD_MAX, d.gap * mul));
+    // 좁은 구간은 덜 흔들리게 해서 과하게 불리해지지 않도록 한다
+    const wave = d.wave * Math.min(1, mul);
+    const minTop = 55 + wave;
+    const maxTop = H - groundHeight - gap - 55 - wave;
     const topHeight = minTop + Math.random() * Math.max(20, maxTop - minTop);
     pipes.push({
       x: W,
       topHeight: topHeight,
-      gap: d.gap,
-      wave: d.wave,
+      gap: gap,
+      wave: wave,
       phase: Math.random() * Math.PI * 2,
       passed: false
     });
