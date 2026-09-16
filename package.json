@@ -1,0 +1,11 @@
+{
+  "name": "flappy-bird-game",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Canvas와 WebAudio만으로 만든 단일 HTML 파일 플래피 버드 게임",
+  "scripts": {
+    "build": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync('index.html','public/index.html');console.log('public/index.html 생성됨')\"",
+    "deploy": "npm run build && wrangler deploy",
+    "preview": "npm run build && wrangler dev"
+  }
+}
