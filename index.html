@@ -65,6 +65,8 @@ const STATE = { READY: 0, PLAYING: 1, GAMEOVER: 2 };
 let state = STATE.READY;
 
 let score = 0;
+let pipesPassed = 0;
+const popups = [];   // 통과 시 떠오르는 획득 점수 표시
 let best = Number(localStorage.getItem('flappyBest') || 0);
 let flashAlpha = 0;      // 충돌 화면 플래시
 let shake = 0;           // 화면 흔들림 강도
@@ -95,7 +97,7 @@ function beep(freq, duration, type, vol, glideTo) {
 }
 const sfx = {
   flap: () => beep(520, 0.09, 'square', 0.10, 700),
-  score: () => beep(880, 0.12, 'square', 0.12, 1200),
+  score: (pts = 1) => beep(760 + pts * 120, 0.12, 'square', 0.12, 1000 + pts * 220),
   hit: () => beep(140, 0.35, 'sawtooth', 0.16, 60)
 };
 
@@ -206,6 +208,16 @@ const SPEED_START = 2.2, SPEED_MAX = 3.3;
 const SPACING = 205;      // 파이프 사이 픽셀 간격(속도와 무관하게 유지)
 const WAVE_FROM = 10;     // 이 점수부터 파이프가 흔들리기 시작
 
+// 좁은 간격일수록 높은 점수를 준다
+const GAP_POINT_TIERS = [
+  { maxGap: 120, points: 3 },
+  { maxGap: 140, points: 2 }
+];
+function gapPoints(gap) {
+  const tier = GAP_POINT_TIERS.find(t => gap < t.maxGap);
+  return tier ? tier.points : 1;
+}
+
 // 파이프마다 간격을 다르게 뽑아 난이도에 기복을 준다
 const GAP_HARD_MIN = 104, GAP_HARD_MAX = 200;
 const GAP_VARIANTS = [
@@ -218,9 +230,9 @@ let lastGapMul = 1;
 
 function pickGapMul() {
   // 초반 몇 개는 넓은 구간만 내보내 적응할 여유를 준다
-  if (score < 3) return (lastGapMul = GAP_VARIANTS[Math.random() < 0.5 ? 0 : 1].mul);
+  if (pipesPassed < 3) return (lastGapMul = GAP_VARIANTS[Math.random() < 0.5 ? 0 : 1].mul);
 
-  const t = Math.min(score, 30) / 30;
+  const t = Math.min(pipesPassed, 30) / 30;
   const tightBefore = lastGapMul < 0.9;
   const weights = GAP_VARIANTS.map(v => {
     // 점수가 오를수록 좁은 구간이 자주 나온다
@@ -237,12 +249,14 @@ function pickGapMul() {
   return (lastGapMul = 1);
 }
 
+// 난이도 진행은 점수가 아니라 통과한 파이프 수를 기준으로 한다
+// (점수는 간격에 따라 1~3점씩 붙으므로 진행도와 비례하지 않는다)
 function difficulty() {
-  const t = Math.min(score, 30) / 30;
+  const t = Math.min(pipesPassed, 30) / 30;
   return {
     gap: GAP_START - (GAP_START - GAP_MIN) * t,
     speed: SPEED_START + (SPEED_MAX - SPEED_START) * t,
-    wave: score >= WAVE_FROM ? Math.min(32, (score - WAVE_FROM) * 2.2) : 0
+    wave: pipesPassed >= WAVE_FROM ? Math.min(32, (pipesPassed - WAVE_FROM) * 2.2) : 0
   };
 }
 
@@ -286,7 +300,9 @@ function resetGame() {
   pipeTimer = 0;
   lastGapMul = 1;
   particles.length = 0;
+  popups.length = 0;
   score = 0;
+  pipesPassed = 0;
   flashAlpha = 0;
   shake = 0;
   state = STATE.READY;
@@ -399,6 +415,13 @@ function update() {
     if (p.life <= 0) particles.splice(i, 1);
   }
 
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.y -= 0.7;
+    p.life--;
+    if (p.life <= 0) popups.splice(i, 1);
+  }
+
   if (state === STATE.READY) {
     readyBob = Math.sin(frame * 0.06) * 6;
     bird.wing += 0.2;
@@ -454,8 +477,11 @@ function update() {
 
     if (!pipe.passed && pipe.x + pipeWidth < bird.x) {
       pipe.passed = true;
-      score++;
-      sfx.score();
+      pipesPassed++;
+      const points = gapPoints(pipe.gap);
+      score += points;
+      popups.push({ x: bird.x + 22, y: bird.y - 14, life: 45, points: points });
+      sfx.score(points);
     }
 
     if (checkCollision(pipe)) {
@@ -715,6 +741,23 @@ function drawBird() {
   ctx.restore();
 }
 
+const POINT_COLORS = { 1: '#ffffff', 2: '#ffe066', 3: '#ff9a3c' };
+
+function drawPopups() {
+  ctx.textAlign = 'center';
+  ctx.lineJoin = 'round';
+  popups.forEach(p => {
+    ctx.globalAlpha = Math.min(1, p.life / 20);
+    ctx.font = `bold ${16 + p.points * 3}px Arial`;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.strokeText('+' + p.points, p.x, p.y);
+    ctx.fillStyle = POINT_COLORS[p.points];
+    ctx.fillText('+' + p.points, p.x, p.y);
+    ctx.globalAlpha = 1;
+  });
+}
+
 function drawScore() {
   ctx.textAlign = 'center';
   ctx.font = 'bold 46px Arial';
@@ -810,6 +853,7 @@ function draw() {
   drawParticles();
   drawGround();
   drawBird();
+  drawPopups();
 
   if (state === STATE.PLAYING) {
     drawScore();
