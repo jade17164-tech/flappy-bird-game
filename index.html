@@ -213,6 +213,7 @@ const GAP_START = 150, GAP_MIN = 128;
 const SPEED_START = 2.2, SPEED_MAX = 3.3;
 const SPACING = 205;      // 파이프 사이 픽셀 간격(속도와 무관하게 유지)
 const WAVE_FROM = 10;     // 이 점수부터 파이프가 흔들리기 시작
+const EARLY_STAGE_PIPES = 5;  // 초반 구간으로 취급할 파이프 수
 
 // 좁은 간격일수록 높은 점수를 준다
 const GAP_POINT_TIERS = [
@@ -507,6 +508,11 @@ function update() {
       score += points;
       popups.push({ x: bird.x + 22, y: bird.y - 14, life: 45, points: points });
       sfx.score(points);
+
+      // 초반 구간을 지나면 난이도 상승을 멈춘다
+      if (pipesPassed >= EARLY_STAGE_PIPES) {
+        triggerGameOver();
+      }
     }
 
     if (checkCollision(pipe)) {
